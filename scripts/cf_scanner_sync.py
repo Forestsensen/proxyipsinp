@@ -121,9 +121,9 @@ def main():
     zone_id = os.environ.get("CF_ZONE_ID")
     target_domain = os.environ.get("CF_TARGET_DOMAIN")
     cf_email = os.environ.get("CF_EMAIL")
-    check_api_url = "https://proxyip.xxxxxxx.nyc.mn/check"
+    check_api_url = "https://proxyipsinp.xxxxxxx.nyc.mn/check"
     sync_count = int(os.environ.get("SYNC_COUNT", 10))
-    scan_count = int(os.environ.get("SCAN_COUNT", 1000))
+    scan_count = int(os.environ.get("SCAN_COUNT", 2000))
     
     if not all([api_token, zone_id, target_domain, cf_email]):
         print("Error: Missing required environment variables (CF_API_TOKEN, CF_ZONE_ID, CF_TARGET_DOMAIN, CF_EMAIL).")
