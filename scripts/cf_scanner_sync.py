@@ -43,7 +43,7 @@ def test_ip(ip, check_api_url, timeout=5.0):
         url = f"{check_api_url}?proxyip={ip}"
         
         resp = requests.get(url, timeout=timeout).json()
-        if resp.get("success"):
+        if resp.get("success") is True:
             connect_time = int((time.time() - start_time) * 1000)
             
             # 提取国家 (country) 或 colo，优先用 colo，如果没有就用 country，最后 fallback 到 UNK
