@@ -34,28 +34,23 @@ def generate_random_ip():
     
     return f"{p1}.{p2}.{p3}.{p4}"
 
-def test_ip(ip, port=443, timeout=2.0):
+def test_ip(ip, check_api_url, timeout=5.0):
     start_time = time.time()
     try:
-        with socket.create_connection((ip, port), timeout=timeout) as sock:
+        url = f"{check_api_url}?proxyip={ip}:443"
+        # 兼容你的 API 格式，有的 API 可能不需要加端口，如果不需要请改成 f"{check_api_url}?proxyip={ip}"
+        
+        resp = requests.get(url, timeout=timeout).json()
+        if resp.get("success"):
             connect_time = int((time.time() - start_time) * 1000)
             
-            # Send HTTP Request simulating the Android ScannerEngine
-            request = (
-                "GET /cdn-cgi/trace HTTP/1.1\r\n"
-                "Host: speed.cloudflare.com\r\n"
-                "User-Agent: CFAutoSync/1.0\r\n"
-                "Connection: close\r\n\r\n"
-            )
-            sock.sendall(request.encode('utf-8'))
+            # 提取国家 (country) 或 colo，优先用 colo，如果没有就用 country，最后 fallback 到 UNK
+            colo = resp.get("colo") or resp.get("country") or "UNK"
             
-            response = sock.recv(4096).decode('utf-8', errors='ignore')
+            # 如果 API 返回了 latencyMs，优先用 API 测算的延迟，否则用整个请求的耗时
+            latency = resp.get("latencyMs", connect_time)
             
-            # Basic validation like in Kotlin ScannerEngine
-            if "cloudflare" in response.lower() and ("plain HTTP request" in response or "400 Bad Request" in response):
-                cf_ray_match = re.search(r"CF-RAY:\s*[a-zA-Z0-9]+-([A-Z]{3})", response)
-                colo = cf_ray_match.group(1) if cf_ray_match else "UNK"
-                return {"ip": ip, "latency": connect_time, "colo": colo}
+            return {"ip": ip, "latency": latency, "colo": colo}
     except Exception:
         pass
     return None
@@ -109,23 +104,24 @@ def main():
     api_token = os.environ.get("CF_API_TOKEN")
     zone_id = os.environ.get("CF_ZONE_ID")
     target_domain = os.environ.get("CF_TARGET_DOMAIN")
-    sync_count = int(os.environ.get("SYNC_COUNT", 5))
+    check_api_url = os.environ.get("CHECK_API_URL")
+    sync_count = int(os.environ.get("SYNC_COUNT", 10))
     scan_count = int(os.environ.get("SCAN_COUNT", 1000))
     
-    if not all([api_token, zone_id, target_domain]):
-        print("Error: Missing required environment variables (CF_API_TOKEN, CF_ZONE_ID, CF_TARGET_DOMAIN).")
+    if not all([api_token, zone_id, target_domain, check_api_url]):
+        print("Error: Missing required environment variables (CF_API_TOKEN, CF_ZONE_ID, CF_TARGET_DOMAIN, CHECK_API_URL).")
         print("Please configure them in GitHub Secrets.")
         exit(1)
         
     print(f"Generating {scan_count} random Cloudflare IPs...")
     ips_to_test = [generate_random_ip() for _ in range(scan_count)]
     
-    print("Testing IPs concurrently...")
+    print(f"Testing IPs concurrently via {check_api_url}...")
     valid_ips = []
     
     # Use ThreadPool to scan fast
     with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
-        futures = {executor.submit(test_ip, ip): ip for ip in ips_to_test}
+        futures = {executor.submit(test_ip, ip, check_api_url): ip for ip in ips_to_test}
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
             if result:
