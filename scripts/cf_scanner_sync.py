@@ -5,6 +5,7 @@ import time
 import re
 import requests
 import concurrent.futures
+from datetime import datetime, timedelta, timezone
 
     # === Cloudflare IPv4 Ranges (IP段配置区) ===
     # 可以在这里自由增删你想扫描的 CIDR
@@ -102,6 +103,19 @@ def sync_to_cloudflare(api_token, zone_id, target_domain, best_ips, cf_email):
         print(f"Exception during Cloudflare sync: {e}")
         return False
 
+def save_ips_to_file(best_ips):
+    # Calculate Beijing Time (UTC+8)
+    bj_time = datetime.now(timezone.utc) + timedelta(hours=8)
+    time_str = bj_time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    with open("ips-v4.txt", "w", encoding="utf-8") as f:
+        # 只写入纯 IP，或者你可以保留一点注释，我这里按最纯粹的 txt 格式写，每行一个 IP
+        # 很多工具直接读取 txt 里的 IP，所以最好不要放 Markdown 的表格
+        for ip in best_ips:
+            f.write(f"{ip['ip']}\n")
+            
+    print("Successfully saved latest IPs to ips-v4.txt")
+
 def main():
     api_token = os.environ.get("CF_API_TOKEN")
     zone_id = os.environ.get("CF_ZONE_ID")
@@ -194,7 +208,10 @@ def main():
         print(f"IP: {ip['ip']:<15} | Latency: {ip['latency']:>3}ms | Colo: {ip['colo']}")
         
     print("\nStarting Cloudflare DNS Sync...")
-    sync_to_cloudflare(api_token, zone_id, target_domain, best_ips, cf_email)
+    sync_success = sync_to_cloudflare(api_token, zone_id, target_domain, best_ips, cf_email)
+    
+    if sync_success:
+        save_ips_to_file(best_ips)
 
 if __name__ == "__main__":
     main()

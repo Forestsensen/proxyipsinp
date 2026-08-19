@@ -10,6 +10,8 @@ on:
 jobs:
   scan-and-sync:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -32,3 +34,11 @@ jobs:
           SYNC_COUNT: '10' # Number of IPs to keep in DNS
           SCAN_COUNT: '1000' # Number of IPs to test per run
         run: python scripts/cf_scanner_sync.py
+
+      - name: Commit and Push IP Log
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add ips-v4.txt
+          # Only commit if there are changes
+          git diff --quiet && git diff --staged --quiet || (git commit -m "docs: 自动更新最新优选 IP [skip ci]" && git push)
