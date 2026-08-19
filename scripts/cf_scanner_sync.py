@@ -159,7 +159,7 @@ def main():
         
         # === 并发线程配置区 ===
         # 控制同时发起多少个测速请求，默认 50，太高容易导致测速接口崩溃
-        with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
             futures = {executor.submit(test_ip, ip, check_api_url): ip for ip in ips_to_test}
             for future in concurrent.futures.as_completed(futures):
                 result = future.result()
