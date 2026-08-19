@@ -54,9 +54,10 @@ def test_ip(ip, check_api_url, timeout=5.0):
         pass
     return None
 
-def sync_to_cloudflare(api_token, zone_id, target_domain, best_ips):
+def sync_to_cloudflare(api_token, zone_id, target_domain, best_ips, cf_email):
     headers = {
-        "Authorization": f"Bearer {api_token}",
+        "X-Auth-Email": cf_email,
+        "X-Auth-Key": api_token,
         "Content-Type": "application/json"
     }
     url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?type=A&name={target_domain}"
@@ -103,12 +104,13 @@ def main():
     api_token = os.environ.get("CF_API_TOKEN")
     zone_id = os.environ.get("CF_ZONE_ID")
     target_domain = os.environ.get("CF_TARGET_DOMAIN")
+    cf_email = os.environ.get("CF_EMAIL")
     check_api_url = "https://proxyipsinp.xxxxxxx.nyc.mn/check"
     sync_count = int(os.environ.get("SYNC_COUNT", 10))
     scan_count = int(os.environ.get("SCAN_COUNT", 1000))
     
-    if not all([api_token, zone_id, target_domain]):
-        print("Error: Missing required environment variables (CF_API_TOKEN, CF_ZONE_ID, CF_TARGET_DOMAIN).")
+    if not all([api_token, zone_id, target_domain, cf_email]):
+        print("Error: Missing required environment variables (CF_API_TOKEN, CF_ZONE_ID, CF_TARGET_DOMAIN, CF_EMAIL).")
         print("Please configure them in GitHub Secrets.")
         exit(1)
         
@@ -116,30 +118,70 @@ def main():
     ips_to_test = [generate_random_ip() for _ in range(scan_count)]
     
     print(f"Testing IPs concurrently via {check_api_url}...")
-    valid_ips = []
+    valid_usa = []
+    valid_hkg = []
     
-    # Use ThreadPool to scan fast
-    with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
-        futures = {executor.submit(test_ip, ip, check_api_url): ip for ip in ips_to_test}
-        for future in concurrent.futures.as_completed(futures):
-            result = future.result()
-            if result:
-                valid_ips.append(result)
+    # We will loop scanning until we find enough USA and HKG IPs, or hit a maximum attempt limit to prevent infinite loops.
+    max_attempts = 5
+    attempt = 0
+    
+    while attempt < max_attempts and (len(valid_usa) < 20 or len(valid_hkg) < 20):
+        attempt += 1
+        print(f"--- Scan Iteration {attempt} ---")
+        ips_to_test = [generate_random_ip() for _ in range(scan_count)]
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
+            futures = {executor.submit(test_ip, ip, check_api_url): ip for ip in ips_to_test}
+            for future in concurrent.futures.as_completed(futures):
+                result = future.result()
+                if result:
+                    colo = result['colo'].upper()
+                    if colo == "USA" and len(valid_usa) < 20:
+                        valid_usa.append(result)
+                        print(f"[FOUND USA] {result['ip']} (Total: {len(valid_usa)}/20)")
+                    elif colo == "HKG" and len(valid_hkg) < 20:
+                        valid_hkg.append(result)
+                        print(f"[FOUND HKG] {result['ip']} (Total: {len(valid_hkg)}/20)")
+                        
+                # Early exit if we hit our target during the thread loop
+                if len(valid_usa) >= 20 and len(valid_hkg) >= 20:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    break
+                    
+    print(f"\nScan completed. Found {len(valid_usa)} USA IPs and {len(valid_hkg)} HKG IPs.")
                 
-    if not valid_ips:
-        print("No valid IPs found in this scan. Aborting sync.")
+    if not valid_usa and not valid_hkg:
+        print("No valid USA or HKG IPs found in this scan. Aborting sync.")
         exit(1)
         
-    # Sort by latency (lowest first)
-    valid_ips.sort(key=lambda x: x["latency"])
+    # Sort both lists by latency (lowest first)
+    valid_usa.sort(key=lambda x: x["latency"])
+    valid_hkg.sort(key=lambda x: x["latency"])
     
-    best_ips = valid_ips[:sync_count]
-    print("\n--- Top IPs Selected ---")
+    # Combine the top ones.
+    # The requirement is to "sync 10 total". Let's take the top 5 USA and top 5 HKG if available.
+    best_ips = []
+    take_each = sync_count // 2
+    
+    # Add top USA
+    best_ips.extend(valid_usa[:take_each])
+    # Add top HKG
+    best_ips.extend(valid_hkg[:take_each])
+    
+    # If one list was short, fill the rest with the other list to ensure we always try to hit sync_count
+    if len(best_ips) < sync_count:
+        remaining = sync_count - len(best_ips)
+        # Try to pull more from USA if HKG was short, or vice-versa
+        extra_usa = [ip for ip in valid_usa if ip not in best_ips]
+        extra_hkg = [ip for ip in valid_hkg if ip not in best_ips]
+        best_ips.extend((extra_usa + extra_hkg)[:remaining])
+        
+    print(f"\n--- Top {len(best_ips)} IPs Selected for Sync ---")
     for ip in best_ips:
         print(f"IP: {ip['ip']:<15} | Latency: {ip['latency']:>3}ms | Colo: {ip['colo']}")
         
     print("\nStarting Cloudflare DNS Sync...")
-    sync_to_cloudflare(api_token, zone_id, target_domain, best_ips)
+    sync_to_cloudflare(api_token, zone_id, target_domain, best_ips, cf_email)
 
 if __name__ == "__main__":
     main()
