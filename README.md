@@ -1,7 +1,7 @@
 # Cloudflare IP Auto Scanner & Sync (CF Proxyip 扫描 自动同步器)
 
-这是一个运行在 GitHub Actions 上的全自动 Cloudflare  IP 扫描与 DNS 同步工具。它会自动生成大量 CF IP 
-并通过 API 测速挑选出Proxyip IP（默认只挑选 **10 个 USA 节点**），并自动更新到你的 Cloudflare DNS 记录中。
+这是一个运行在 GitHub Actions 上的全自动 Cloudflare  IP 扫描与 DNS 同步工具。
+它会自动生成大量 CF IP 并通过 API 测速挑选出Proxyip IP（默认只挑选 **10 个 USA 节点**），并自动更新到你的 Cloudflare DNS 记录中。
 
 ---
 
