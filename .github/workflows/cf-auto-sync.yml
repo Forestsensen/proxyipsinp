@@ -28,7 +28,6 @@ jobs:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
           CF_TARGET_DOMAIN: ${{ secrets.CF_TARGET_DOMAIN }}
-          CHECK_API_URL: ${{ secrets.CHECK_API_URL }}
           SYNC_COUNT: '10' # Number of IPs to keep in DNS
           SCAN_COUNT: '1000' # Number of IPs to test per run
         run: python scripts/cf_scanner_sync.py

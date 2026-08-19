@@ -37,8 +37,7 @@ def generate_random_ip():
 def test_ip(ip, check_api_url, timeout=5.0):
     start_time = time.time()
     try:
-        url = f"{check_api_url}?proxyip={ip}:443"
-        # 兼容你的 API 格式，有的 API 可能不需要加端口，如果不需要请改成 f"{check_api_url}?proxyip={ip}"
+        url = f"{check_api_url}?proxyip={ip}"
         
         resp = requests.get(url, timeout=timeout).json()
         if resp.get("success"):
@@ -104,12 +103,12 @@ def main():
     api_token = os.environ.get("CF_API_TOKEN")
     zone_id = os.environ.get("CF_ZONE_ID")
     target_domain = os.environ.get("CF_TARGET_DOMAIN")
-    check_api_url = os.environ.get("CHECK_API_URL")
+    check_api_url = "https://proxyipsinp.xxxxxxx.nyc.mn/check"
     sync_count = int(os.environ.get("SYNC_COUNT", 10))
     scan_count = int(os.environ.get("SCAN_COUNT", 1000))
     
-    if not all([api_token, zone_id, target_domain, check_api_url]):
-        print("Error: Missing required environment variables (CF_API_TOKEN, CF_ZONE_ID, CF_TARGET_DOMAIN, CHECK_API_URL).")
+    if not all([api_token, zone_id, target_domain]):
+        print("Error: Missing required environment variables (CF_API_TOKEN, CF_ZONE_ID, CF_TARGET_DOMAIN).")
         print("Please configure them in GitHub Secrets.")
         exit(1)
         
