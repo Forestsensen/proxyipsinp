@@ -6,12 +6,14 @@ import re
 import requests
 import concurrent.futures
 
-# Cloudflare IPv4 Ranges
+    # === Cloudflare IPv4 Ranges (IP段配置区) ===
+    # 可以在这里自由增删你想扫描的 CIDR
 CF_CIDRS = [
     "104.16.0.0/13", "104.22.0.0/16", "104.23.0.0/16", "162.152.0.0/13",
     "162.158.0.0/16", "162.159.0.0/16", "172.64.0.0/13", "172.68.0.0/16",
     "172.69.0.0/16", "172.70.0.0/16", "172.71.0.0/16"
 ]
+    # ==========================================
 
 def generate_random_ip():
     cidr = random.choice(CF_CIDRS)
@@ -118,14 +120,25 @@ def main():
     ips_to_test = [generate_random_ip() for _ in range(scan_count)]
     
     print(f"Testing IPs concurrently via {check_api_url}...")
-    valid_usa = []
-    valid_hkg = []
     
-    # We will loop scanning until we find enough USA and HKG IPs, or hit a maximum attempt limit to prevent infinite loops.
+    # === 核心筛选配置区 (你可以随意修改这里) ===
+    # 格式: {"地区代码": 需要收集的数量}。修改这里可以任意增删国家和数量。
+    target_regions = {
+        "USA": 10
+    }
+    # ============================================
+    
+    valid_ips_by_region = {region: [] for region in target_regions}
+    
+    # We will loop scanning until we find enough IPs for all regions, or hit max attempts.
     max_attempts = 5
     attempt = 0
     
-    while attempt < max_attempts and (len(valid_usa) < 20 or len(valid_hkg) < 20):
+    while attempt < max_attempts:
+        # Check if all regions hit their target
+        if all(len(valid_ips_by_region[r]) >= target_regions[r] for r in target_regions):
+            break
+            
         attempt += 1
         print(f"--- Scan Iteration {attempt} ---")
         ips_to_test = [generate_random_ip() for _ in range(scan_count)]
@@ -136,45 +149,45 @@ def main():
                 result = future.result()
                 if result:
                     colo = result['colo'].upper()
-                    if colo == "USA" and len(valid_usa) < 20:
-                        valid_usa.append(result)
-                        print(f"[FOUND USA] {result['ip']} (Total: {len(valid_usa)}/20)")
-                    elif colo == "HKG" and len(valid_hkg) < 20:
-                        valid_hkg.append(result)
-                        print(f"[FOUND HKG] {result['ip']} (Total: {len(valid_hkg)}/20)")
+                    if colo in target_regions and len(valid_ips_by_region[colo]) < target_regions[colo]:
+                        valid_ips_by_region[colo].append(result)
+                        print(f"[FOUND {colo}] {result['ip']} (Total: {len(valid_ips_by_region[colo])}/{target_regions[colo]})")
                         
-                # Early exit if we hit our target during the thread loop
-                if len(valid_usa) >= 20 and len(valid_hkg) >= 20:
+                # Early exit check
+                if all(len(valid_ips_by_region[r]) >= target_regions[r] for r in target_regions):
                     executor.shutdown(wait=False, cancel_futures=True)
                     break
                     
-    print(f"\nScan completed. Found {len(valid_usa)} USA IPs and {len(valid_hkg)} HKG IPs.")
+    print("\nScan completed. Summary:")
+    total_found = 0
+    for r, ips in valid_ips_by_region.items():
+        print(f"- {r}: {len(ips)} IPs found")
+        total_found += len(ips)
                 
-    if not valid_usa and not valid_hkg:
-        print("No valid USA or HKG IPs found in this scan. Aborting sync.")
+    if total_found == 0:
+        print("No valid IPs found in this scan. Aborting sync.")
         exit(1)
         
-    # Sort both lists by latency (lowest first)
-    valid_usa.sort(key=lambda x: x["latency"])
-    valid_hkg.sort(key=lambda x: x["latency"])
+    # Sort all lists by latency (lowest first)
+    for r in valid_ips_by_region:
+        valid_ips_by_region[r].sort(key=lambda x: x["latency"])
     
-    # Combine the top ones.
-    # The requirement is to "sync 10 total". Let's take the top 5 USA and top 5 HKG if available.
+    # Combine the top ones evenly
     best_ips = []
-    take_each = sync_count // 2
+    take_each = sync_count // len(target_regions) if target_regions else sync_count
     
-    # Add top USA
-    best_ips.extend(valid_usa[:take_each])
-    # Add top HKG
-    best_ips.extend(valid_hkg[:take_each])
+    for r in valid_ips_by_region:
+        best_ips.extend(valid_ips_by_region[r][:take_each])
     
-    # If one list was short, fill the rest with the other list to ensure we always try to hit sync_count
+    # If we are short (e.g., sync_count is 10, but we only found 3 HKG), fill the rest with the fastest available extras
     if len(best_ips) < sync_count:
         remaining = sync_count - len(best_ips)
-        # Try to pull more from USA if HKG was short, or vice-versa
-        extra_usa = [ip for ip in valid_usa if ip not in best_ips]
-        extra_hkg = [ip for ip in valid_hkg if ip not in best_ips]
-        best_ips.extend((extra_usa + extra_hkg)[:remaining])
+        extra_pool = []
+        for r in valid_ips_by_region:
+            extra_pool.extend([ip for ip in valid_ips_by_region[r] if ip not in best_ips])
+        # Sort extras by latency globally
+        extra_pool.sort(key=lambda x: x["latency"])
+        best_ips.extend(extra_pool[:remaining])
         
     print(f"\n--- Top {len(best_ips)} IPs Selected for Sync ---")
     for ip in best_ips:
