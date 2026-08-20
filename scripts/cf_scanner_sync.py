@@ -9,9 +9,10 @@ from datetime import datetime, timedelta, timezone
 
 # ==========================================
 # 🎯 全局默认地区设置 (如果想要永久换地区，只改这里！)
-# 支持多个地区，用逗号隔开，例如 "SJC,LAX,HKG"
+# 支持多个地区，用逗号隔开，例如 "SJC,LAX,HKG,FRA"
+# 💡 新手不知道有什么地区？可以直接填 "ALL"，系统会全区盲扫并自动创建所有能扫到的地区子域名！
 # ==========================================
-DEFAULT_REGIONS = "LAX"
+DEFAULT_REGIONS = "ALL"
 # ==========================================
 
     # === Cloudflare IPv4 Ranges (IP段配置区) ===
@@ -136,7 +137,12 @@ def main():
     
     region_input = DEFAULT_REGIONS
     target_regions = [r.strip().upper() for r in region_input.split(",") if r.strip()]
-    print(f"Target Regions dynamically set to: {target_regions}")
+    is_scan_all = "ALL" in target_regions
+    
+    if is_scan_all:
+        print(f"Target Regions dynamically set to: ALL (Global Scan Mode)")
+    else:
+        print(f"Target Regions dynamically set to: {target_regions}")
     
     check_api_url = "https://proxyip.xxxxxxx.nyc.mn/check"
     sync_count = int(os.environ.get("SYNC_COUNT", 10))
@@ -159,17 +165,20 @@ def main():
         except Exception as e:
             pass
     
+    can_sync = True
     if not all([api_token, zone_id, base_domain, cf_email]):
-        print("Error: Missing required environment variables (CF_API_TOKEN, CF_ZONE_ID, CF_TARGET_DOMAIN, CF_EMAIL).")
-        print("Please configure them in GitHub Secrets.")
-        exit(1)
+        print("Warning: Missing required environment variables (CF_API_TOKEN, CF_ZONE_ID, CF_TARGET_DOMAIN, CF_EMAIL).")
+        print("DNS Synchronization will be skipped, but IP scanning will still proceed!")
+        can_sync = False
         
     print(f"Generating {scan_count} random Cloudflare IPs...")
     ips_to_test = [generate_random_ip(hot_cidrs) for _ in range(scan_count)]
     
     print(f"Testing IPs concurrently via {check_api_url}...")
     
-    valid_ips_by_region = {region: [] for region in target_regions}
+    valid_ips_by_region = {}
+    if not is_scan_all:
+        valid_ips_by_region = {region: [] for region in target_regions}
     
     # We will loop scanning until we find enough IPs for all regions, or hit max attempts.
     max_attempts = 5
@@ -177,7 +186,7 @@ def main():
     
     while attempt < max_attempts:
         # Check if we hit our target sync count for ALL target regions
-        if all(len(ips) >= sync_count for ips in valid_ips_by_region.values()):
+        if not is_scan_all and all(len(ips) >= sync_count for ips in valid_ips_by_region.values()):
             break
             
         attempt += 1
@@ -192,12 +201,18 @@ def main():
                 result = future.result()
                 if result:
                     colo = result.get('colo', 'UNK').upper()
-                    if colo in target_regions and len(valid_ips_by_region[colo]) < sync_count:
-                        valid_ips_by_region[colo].append(result)
-                        print(f"[FOUND {colo}] {result['ip']} (Total: {len(valid_ips_by_region[colo])}/{sync_count})")
+                    if colo != 'UNK' and (is_scan_all or colo in target_regions):
+                        if colo not in valid_ips_by_region:
+                            if is_scan_all and len(valid_ips_by_region) >= 20:
+                                continue # Limit ALL mode to max 20 regions
+                            valid_ips_by_region[colo] = []
+                            
+                        if len(valid_ips_by_region[colo]) < sync_count:
+                            valid_ips_by_region[colo].append(result)
+                            print(f"[FOUND {colo}] {result['ip']} (Total: {len(valid_ips_by_region[colo])}/{sync_count})")
                         
                 # Early exit check
-                if all(len(ips) >= sync_count for ips in valid_ips_by_region.values()):
+                if not is_scan_all and all(len(ips) >= sync_count for ips in valid_ips_by_region.values()):
                     executor.shutdown(wait=False, cancel_futures=True)
                     break
                     
@@ -225,9 +240,12 @@ def main():
             print(f"IP: {ip['ip']:<15} | Latency: {ip['latency']:>3}ms | Colo: {ip['colo']}")
             
         # Target domain specific to this region
-        target_domain = f"{region.lower()}.{base_domain}"
-        print(f"\nStarting Cloudflare DNS Sync for {target_domain}...")
-        sync_to_cloudflare(api_token, zone_id, target_domain, best_ips, cf_email)
+        if can_sync:
+            target_domain = f"{region.lower()}.{base_domain}"
+            print(f"\nStarting Cloudflare DNS Sync for {target_domain}...")
+            sync_to_cloudflare(api_token, zone_id, target_domain, best_ips, cf_email)
+        else:
+            print(f"\nSkipping Cloudflare DNS Sync for {region} (Missing Credentials).")
                 
     if total_found == 0:
         print("No valid IPs found in this scan across any regions. Aborting.")
