@@ -109,10 +109,10 @@ def save_ips_to_file(best_ips):
     time_str = bj_time.strftime("%Y-%m-%d %H:%M:%S")
     
     with open("ips-v4.txt", "w", encoding="utf-8") as f:
-        # 只写入纯 IP，或者你可以保留一点注释，我这里按最纯粹的 txt 格式写，每行一个 IP
-        # 很多工具直接读取 txt 里的 IP，所以最好不要放 Markdown 的表格
+        # 写入纯 IP 和 地区备注，格式为 IP#地区
+        # 很多代理/机场客户端使用 # 作为节点备注的分隔符
         for ip in best_ips:
-            f.write(f"{ip['ip']}\n")
+            f.write(f"{ip['ip']}#{ip['colo']}\n")
             
     print("Successfully saved latest IPs to ips-v4.txt")
 
@@ -138,7 +138,11 @@ def main():
     # === 核心筛选配置区 (你可以随意修改这里) ===
     # 格式: {"地区代码": 需要收集的数量}。修改这里可以任意增删国家和数量。
     target_regions = {
-        "TPE": 10
+        "TPE": 5,
+        "NRT": 5,
+        "HKG": 5,
+        "LAX": 5,
+        "SJC": 5
     }
     # ============================================
     
