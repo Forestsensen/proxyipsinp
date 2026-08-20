@@ -135,26 +135,19 @@ def main():
     
     print(f"Testing IPs concurrently via {check_api_url}...")
     
-    # === 核心筛选配置区 (你可以随意修改这里) ===
-    # 格式: {"地区代码": 需要收集的数量}。修改这里可以任意增删国家和数量。
-    target_regions = {
-        "TPE": 5,
-        "NRT": 5,
-        "HKG": 5,
-        "LAX": 5,
-        "SJC": 5
-    }
+    # === 盲扫配置区 ===
+    # 不限制地区，只要速度够快就行。
     # ============================================
     
-    valid_ips_by_region = {region: [] for region in target_regions}
+    valid_ips = []
     
-    # We will loop scanning until we find enough IPs for all regions, or hit max attempts.
+    # We will loop scanning until we find enough IPs, or hit max attempts.
     max_attempts = 5
     attempt = 0
     
     while attempt < max_attempts:
-        # Check if all regions hit their target
-        if all(len(valid_ips_by_region[r]) >= target_regions[r] for r in target_regions):
+        # Check if we hit our target sync count
+        if len(valid_ips) >= sync_count:
             break
             
         attempt += 1
@@ -168,46 +161,27 @@ def main():
             for future in concurrent.futures.as_completed(futures):
                 result = future.result()
                 if result:
-                    colo = result['colo'].upper()
-                    if colo in target_regions and len(valid_ips_by_region[colo]) < target_regions[colo]:
-                        valid_ips_by_region[colo].append(result)
-                        print(f"[FOUND {colo}] {result['ip']} (Total: {len(valid_ips_by_region[colo])}/{target_regions[colo]})")
+                    valid_ips.append(result)
+                    colo = result['colo']
+                    print(f"[FOUND {colo}] {result['ip']} (Total: {len(valid_ips)}/{sync_count})")
                         
                 # Early exit check
-                if all(len(valid_ips_by_region[r]) >= target_regions[r] for r in target_regions):
+                if len(valid_ips) >= sync_count:
                     executor.shutdown(wait=False, cancel_futures=True)
                     break
                     
     print("\nScan completed. Summary:")
-    total_found = 0
-    for r, ips in valid_ips_by_region.items():
-        print(f"- {r}: {len(ips)} IPs found")
-        total_found += len(ips)
+    print(f"- Total valid IPs found: {len(valid_ips)}")
                 
-    if total_found == 0:
+    if not valid_ips:
         print("No valid IPs found in this scan. Aborting sync.")
         exit(1)
         
-    # Sort all lists by latency (lowest first)
-    for r in valid_ips_by_region:
-        valid_ips_by_region[r].sort(key=lambda x: x["latency"])
+    # Sort all IPs by latency (lowest first)
+    valid_ips.sort(key=lambda x: x["latency"])
     
-    # Combine the top ones evenly
-    best_ips = []
-    take_each = sync_count // len(target_regions) if target_regions else sync_count
-    
-    for r in valid_ips_by_region:
-        best_ips.extend(valid_ips_by_region[r][:take_each])
-    
-    # If we are short (e.g., sync_count is 10, but we only found 3 HKG), fill the rest with the fastest available extras
-    if len(best_ips) < sync_count:
-        remaining = sync_count - len(best_ips)
-        extra_pool = []
-        for r in valid_ips_by_region:
-            extra_pool.extend([ip for ip in valid_ips_by_region[r] if ip not in best_ips])
-        # Sort extras by latency globally
-        extra_pool.sort(key=lambda x: x["latency"])
-        best_ips.extend(extra_pool[:remaining])
+    # Take the top fastest ones
+    best_ips = valid_ips[:sync_count]
         
     print(f"\n--- Top {len(best_ips)} IPs Selected for Sync ---")
     for ip in best_ips:
