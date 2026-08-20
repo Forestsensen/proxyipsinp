@@ -6,11 +6,6 @@ on:
     - cron: '0 21 * * *'
   # Allow manual trigger from the GitHub Actions tab
   workflow_dispatch:
-    inputs:
-      region_code:
-        description: '临时测速地区 (可多选，逗号隔开，如 LAX,SJC,HKG。留空则使用默认配置)'
-        required: false
-        type: string
 
 jobs:
   scan-and-sync:
@@ -36,8 +31,7 @@ jobs:
           CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
           CF_TARGET_DOMAIN: ${{ secrets.CF_TARGET_DOMAIN }}
           CF_EMAIL: ${{ secrets.CF_EMAIL }}
-          REGION_CODE: ${{ inputs.region_code }}
-          SYNC_COUNT: '10' # Number of IPs to keep in DNS
+          SYNC_COUNT: '5' # Number of IPs to keep in DNS
           SCAN_COUNT: '2000' # Number of IPs to test per run
         run: python scripts/cf_scanner_sync.py
 

@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 # 🎯 全局默认地区设置 (如果想要永久换地区，只改这里！)
 # 支持多个地区，用逗号隔开，例如 "SJC,LAX,HKG"
 # ==========================================
-DEFAULT_REGIONS = "SJC,LAX,HKG"
+DEFAULT_REGIONS = "SJC,LAX,HKG,FRA,NRT,SIN"
 # ==========================================
 
     # === Cloudflare IPv4 Ranges (IP段配置区) ===
@@ -134,7 +134,7 @@ def main():
     base_domain = os.environ.get("CF_TARGET_DOMAIN")
     cf_email = os.environ.get("CF_EMAIL")
     
-    region_input = os.environ.get("REGION_CODE") or DEFAULT_REGIONS
+    region_input = DEFAULT_REGIONS
     target_regions = [r.strip().upper() for r in region_input.split(",") if r.strip()]
     print(f"Target Regions dynamically set to: {target_regions}")
     
