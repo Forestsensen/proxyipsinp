@@ -159,7 +159,7 @@ def main():
     
     # === 地区调度配置区 ===
     # 限制只保留这些目标地区的 IP
-    target_regions = ["FRA", "HKG", "LAX", "SJC"]
+    target_regions = ["FRA", "HKG", "LAX", "SJC", "NRT", "SIN",]
     # ============================================
     
     valid_ips = []
