@@ -183,10 +183,14 @@ def main():
     # We will loop scanning until we find enough IPs for all regions, or hit max attempts.
     max_attempts = 5
     attempt = 0
+    ALL_MODE_LIMIT = 20
     
     while attempt < max_attempts:
         # Check if we hit our target sync count for ALL target regions
-        if not is_scan_all and all(len(ips) >= sync_count for ips in valid_ips_by_region.values()):
+        total_collected = sum(len(ips) for ips in valid_ips_by_region.values())
+        if is_scan_all and total_collected >= ALL_MODE_LIMIT:
+            break
+        elif not is_scan_all and all(len(ips) >= sync_count for ips in valid_ips_by_region.values()):
             break
             
         attempt += 1
@@ -203,16 +207,24 @@ def main():
                     colo = result.get('colo', 'UNK').upper()
                     if colo != 'UNK' and (is_scan_all or colo in target_regions):
                         if colo not in valid_ips_by_region:
-                            if is_scan_all and len(valid_ips_by_region) >= 20:
-                                continue # Limit ALL mode to max 20 regions
                             valid_ips_by_region[colo] = []
                             
-                        if len(valid_ips_by_region[colo]) < sync_count:
-                            valid_ips_by_region[colo].append(result)
-                            print(f"[FOUND {colo}] {result['ip']} (Total: {len(valid_ips_by_region[colo])}/{sync_count})")
+                        if is_scan_all:
+                            total_collected = sum(len(ips) for ips in valid_ips_by_region.values())
+                            if total_collected < ALL_MODE_LIMIT:
+                                valid_ips_by_region[colo].append(result)
+                                print(f"[FOUND {colo}] {result['ip']} (Total ALL: {total_collected + 1}/{ALL_MODE_LIMIT})")
+                        else:
+                            if len(valid_ips_by_region[colo]) < sync_count:
+                                valid_ips_by_region[colo].append(result)
+                                print(f"[FOUND {colo}] {result['ip']} (Total {colo}: {len(valid_ips_by_region[colo])}/{sync_count})")
                         
                 # Early exit check
-                if not is_scan_all and all(len(ips) >= sync_count for ips in valid_ips_by_region.values()):
+                total_collected = sum(len(ips) for ips in valid_ips_by_region.values())
+                if is_scan_all and total_collected >= ALL_MODE_LIMIT:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    break
+                elif not is_scan_all and all(len(ips) >= sync_count for ips in valid_ips_by_region.values()):
                     executor.shutdown(wait=False, cancel_futures=True)
                     break
                     
@@ -232,7 +244,8 @@ def main():
         ips.sort(key=lambda x: x["latency"])
         
         # Take the top fastest ones
-        best_ips = ips[:sync_count]
+        limit = ALL_MODE_LIMIT if is_scan_all else sync_count
+        best_ips = ips[:limit]
         all_best_ips.extend(best_ips)
         
         print(f"\n--- Top {len(best_ips)} IPs Selected for {region} ---")
