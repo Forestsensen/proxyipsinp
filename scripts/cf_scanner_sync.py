@@ -7,6 +7,13 @@ import requests
 import concurrent.futures
 from datetime import datetime, timedelta, timezone
 
+# ==========================================
+# 🎯 全局默认地区设置 (如果想要永久换地区，只改这里！)
+# 支持多个地区，用逗号隔开，例如 "SJC,LAX,HKG"
+# ==========================================
+DEFAULT_REGIONS = "SJC,LAX,HKG"
+# ==========================================
+
     # === Cloudflare IPv4 Ranges (IP段配置区) ===
     # 可以在这里自由增删你想扫描的 CIDR
 CF_CIDRS = [
@@ -126,10 +133,10 @@ def main():
     zone_id = os.environ.get("CF_ZONE_ID")
     base_domain = os.environ.get("CF_TARGET_DOMAIN")
     cf_email = os.environ.get("CF_EMAIL")
-    region_code = os.environ.get("REGION_CODE", "SJC").upper()
     
-    target_domain = f"{region_code.lower()}.{base_domain}"
-    print(f"Target Domain dynamically set to: {target_domain} (Region: {region_code})")
+    region_input = os.environ.get("REGION_CODE") or DEFAULT_REGIONS
+    target_regions = [r.strip().upper() for r in region_input.split(",") if r.strip()]
+    print(f"Target Regions dynamically set to: {target_regions}")
     
     check_api_url = "https://proxyip.xxxxxxx.nyc.mn/check"
     sync_count = int(os.environ.get("SYNC_COUNT", 10))
@@ -162,20 +169,15 @@ def main():
     
     print(f"Testing IPs concurrently via {check_api_url}...")
     
-    # === 地区调度配置区 ===
-    # 动态限制只保留外界传入的目标地区的 IP
-    target_regions = [region_code]
-    # ============================================
+    valid_ips_by_region = {region: [] for region in target_regions}
     
-    valid_ips = []
-    
-    # We will loop scanning until we find enough IPs, or hit max attempts.
+    # We will loop scanning until we find enough IPs for all regions, or hit max attempts.
     max_attempts = 5
     attempt = 0
     
     while attempt < max_attempts:
-        # Check if we hit our target sync count
-        if len(valid_ips) >= sync_count:
+        # Check if we hit our target sync count for ALL target regions
+        if all(len(ips) >= sync_count for ips in valid_ips_by_region.values()):
             break
             
         attempt += 1
@@ -189,38 +191,51 @@ def main():
             for future in concurrent.futures.as_completed(futures):
                 result = future.result()
                 if result:
-                    colo = result.get('colo', 'UNK')
-                    if colo in target_regions:
-                        valid_ips.append(result)
-                        print(f"[FOUND {colo}] {result['ip']} (Total: {len(valid_ips)}/{sync_count})")
+                    colo = result.get('colo', 'UNK').upper()
+                    if colo in target_regions and len(valid_ips_by_region[colo]) < sync_count:
+                        valid_ips_by_region[colo].append(result)
+                        print(f"[FOUND {colo}] {result['ip']} (Total: {len(valid_ips_by_region[colo])}/{sync_count})")
                         
                 # Early exit check
-                if len(valid_ips) >= sync_count:
+                if all(len(ips) >= sync_count for ips in valid_ips_by_region.values()):
                     executor.shutdown(wait=False, cancel_futures=True)
                     break
                     
     print("\nScan completed. Summary:")
-    print(f"- Total valid IPs found: {len(valid_ips)}")
+    total_found = 0
+    all_best_ips = []
+    
+    for region, ips in valid_ips_by_region.items():
+        print(f"- {region}: {len(ips)} valid IPs found")
+        if not ips:
+            print(f"  Warning: No IPs found for {region}")
+            continue
+            
+        total_found += len(ips)
+        
+        # Sort by latency (lowest first)
+        ips.sort(key=lambda x: x["latency"])
+        
+        # Take the top fastest ones
+        best_ips = ips[:sync_count]
+        all_best_ips.extend(best_ips)
+        
+        print(f"\n--- Top {len(best_ips)} IPs Selected for {region} ---")
+        for ip in best_ips:
+            print(f"IP: {ip['ip']:<15} | Latency: {ip['latency']:>3}ms | Colo: {ip['colo']}")
+            
+        # Target domain specific to this region
+        target_domain = f"{region.lower()}.{base_domain}"
+        print(f"\nStarting Cloudflare DNS Sync for {target_domain}...")
+        sync_to_cloudflare(api_token, zone_id, target_domain, best_ips, cf_email)
                 
-    if not valid_ips:
-        print("No valid IPs found in this scan. Aborting sync.")
+    if total_found == 0:
+        print("No valid IPs found in this scan across any regions. Aborting.")
         exit(1)
         
-    # Sort all IPs by latency (lowest first)
-    valid_ips.sort(key=lambda x: x["latency"])
-    
-    # Take the top fastest ones
-    best_ips = valid_ips[:sync_count]
-        
-    print(f"\n--- Top {len(best_ips)} IPs Selected for Sync ---")
-    for ip in best_ips:
-        print(f"IP: {ip['ip']:<15} | Latency: {ip['latency']:>3}ms | Colo: {ip['colo']}")
-        
-    print("\nStarting Cloudflare DNS Sync...")
-    sync_success = sync_to_cloudflare(api_token, zone_id, target_domain, best_ips, cf_email)
-    
-    if sync_success:
-        save_ips_to_file(best_ips)
+    # Save ALL best IPs from all regions to the text file for next run's subnet learning
+    if all_best_ips:
+        save_ips_to_file(all_best_ips)
 
 if __name__ == "__main__":
     main()
