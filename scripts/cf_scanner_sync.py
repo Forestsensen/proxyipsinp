@@ -46,11 +46,11 @@ def test_ip(ip, check_api_url, timeout=5.0):
         if resp.get("success") is True:
             connect_time = int((time.time() - start_time) * 1000)
             
-            # 提取国家 (country) 或 colo，优先用 colo，如果没有就用 country，最后 fallback 到 UNK
-            colo = resp.get("colo") or resp.get("country") or "UNK"
+            # 提取数据中心 (dataCenter)、colo 或 country，优先用 dataCenter
+            colo = resp.get("dataCenter") or resp.get("colo") or resp.get("country") or "UNK"
             
-            # 如果 API 返回了 latencyMs，优先用 API 测算的延迟，否则用整个请求的耗时
-            latency = resp.get("latencyMs", connect_time)
+            # 如果 API 返回了 latencyMs 或者 latency，优先用 API 测算的延迟，否则用整个请求的耗时
+            latency = resp.get("latencyMs") or resp.get("tcpDuration") or connect_time
             
             return {"ip": ip, "latency": latency, "colo": colo}
     except Exception:
@@ -121,7 +121,7 @@ def main():
     zone_id = os.environ.get("CF_ZONE_ID")
     target_domain = os.environ.get("CF_TARGET_DOMAIN")
     cf_email = os.environ.get("CF_EMAIL")
-    check_api_url = "https://proxyipsinp.xxxxxxx.nyc.mn/check"
+    check_api_url = "https://proxyip.xxxxxxx.nyc.mn/check"
     sync_count = int(os.environ.get("SYNC_COUNT", 10))
     scan_count = int(os.environ.get("SCAN_COUNT", 2000))
     
@@ -138,7 +138,7 @@ def main():
     # === 核心筛选配置区 (你可以随意修改这里) ===
     # 格式: {"地区代码": 需要收集的数量}。修改这里可以任意增删国家和数量。
     target_regions = {
-        "USA": 10
+        "TPE": 10
     }
     # ============================================
     
