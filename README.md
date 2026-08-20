@@ -1,7 +1,7 @@
 # Cloudflare IP Auto Scanner & Sync (CF Proxyip 扫描 自动同步器)
 
 这是一个运行在 GitHub Actions 上的全自动 Cloudflare  IP 扫描与 DNS 同步工具。
-它会自动生成大量 CF IP 并通过 API 测速挑选出Proxyip IP（默认只挑选 **10 个 USA 节点**），并自动更新到你的 Cloudflare DNS 记录中。
+它会自动生成大量 CF IP 并通过 API 测速挑选出最优的 Proxyip，并自动更新到你的 Cloudflare DNS 记录中。同时具备**自适应热点网段学习**功能，大幅提升扫描效率。
 
 ---
 
@@ -24,35 +24,30 @@
 
 ## ⚙️ 高级自定义设置
 
-### 🕒 1. 如何修改定时运行时间？
-默认配置为 **每天北京时间早上 5:00** 自动运行一次。
-如果你想修改时间，请在 GitHub 编辑 `.github/workflows/cf-auto-sync.yml` 文件：
-```yaml
-on:
-  schedule:
-    # Cron 表达式使用的是 UTC 时间。北京时间早上 5 点 = UTC 时间 21:00
-    - cron: '0 21 * * *'
-```
-*你可以使用 [crontab.guru](https://crontab.guru/) 来生成你想要的 UTC cron 表达式。*
+### 🧠 1. 核心亮点：自适应热点网段追踪
+系统会自动提取 `ips-v4.txt` 中上次测速成功的优质 IP 生成 `/24` 历史优选网段。
+在下一轮扫描生成 IP 时，有 **50% 的概率优先轰炸这些高概率出货的旧区域**，另外 50% 去全网大网段里盲抽，极大加快了扫出神仙 IP 的速度！输出在 `ips-v4.txt` 的结果还会带上地区后缀（如 `1.1.1.1#HKG`），完美兼容各大机场代理客户端。
 
-### 📍 2. 如何修改扫出来的地区和数量？
-打开 `scripts/cf_scanner_sync.py`，在代码的大约第 **125 行** 找到 `核心筛选配置区`。
-当前的默认配置为收集 10 个 USA 节点：
+### 📍 2. 如何修改扫出来的地区？
+打开 `scripts/cf_scanner_sync.py`，在代码的大约第 **160 行** 找到 `地区调度配置区`。
+当前配置为只保留 `FRA` (法兰克福), `HKG` (香港), `LAX` (洛杉矶), `SJC` (圣何塞) 四大核心地区：
 ```python
-    # === 核心筛选配置区 (你可以随意修改这里) ===
-    # 格式: {"地区代码": 需要收集的数量}。修改这里可以任意增删国家和数量。
-    target_regions = {
-        "USA": 10
-    }
+    # === 地区调度配置区 ===
+    # 限制只保留这些目标地区的 IP
+    target_regions = ["FRA", "HKG", "LAX", "SJC"]
     # ============================================
 ```
-如果你想要加入香港或者换成日本，直接按格式修改即可，例如改回 `{"USA": 10, "HKG": 10}`。
-ps：压不根儿没必要，反正是跟着你的优选ip落地走。
+如果你想要加入日本或者换成台湾，直接在数组里添加即可，例如：`["FRA", "HKG", "LAX", "SJC", "NRT", "TPE"]`。
 
-*(注意：最终同步到 DNS 的总数量，是由 `.github/workflows/cf-auto-sync.yml` 里的 `SYNC_COUNT: '10'` 决定的)*
+### ⚡ 3. 扫描逻辑与并发设置 (YAML)
+在 `.github/workflows/cf-auto-sync.yml` 中，你可以调整环境变量：
+- **`SYNC_COUNT`**: 控制最终要同步几个 IP 到 Cloudflare 的 DNS 记录（默认 `10` 个）。
+- **`SCAN_COUNT`**: 控制每次生成多少个 IP 去抽卡测速（默认生成 `2000` 个）。
 
-### 🌐 3. 如何配置自己想要的 IP 段 (CIDR)？
-打开 `scripts/cf_scanner_sync.py`，在文件最顶部（大约第 **10 行**）你会看到 `IP段配置区`：
+如果你想修改并发数量（默认 `50` 线程），可以在 `scripts/cf_scanner_sync.py` 的 `max_workers=50` 处修改。调高可加快测速，但需注意 API 接口的抗压能力。
+
+### 🌐 4. 如何配置自己想要的 IP 段 (CIDR)？
+打开 `scripts/cf_scanner_sync.py`，在文件最顶部你会看到 `IP段配置区`：
 ```python
     # === Cloudflare IPv4 Ranges (IP段配置区) ===
     # 可以在这里自由增删你想扫描的 CIDR
