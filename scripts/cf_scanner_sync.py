@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 # 🎯 全局默认地区设置 (如果想要永久换地区，只改这里！)
 # 支持多个地区，用逗号隔开，例如 "SJC,LAX,HKG"
 # ==========================================
-DEFAULT_REGIONS = "SJC,LAX,HKG,FRA,NRT,SIN"
+DEFAULT_REGIONS = "SJC,LAX,HKG,FRA"
 # ==========================================
 
     # === Cloudflare IPv4 Ranges (IP段配置区) ===
