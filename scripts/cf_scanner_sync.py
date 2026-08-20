@@ -124,8 +124,13 @@ def save_ips_to_file(best_ips):
 def main():
     api_token = os.environ.get("CF_API_TOKEN")
     zone_id = os.environ.get("CF_ZONE_ID")
-    target_domain = os.environ.get("CF_TARGET_DOMAIN")
+    base_domain = os.environ.get("CF_TARGET_DOMAIN")
     cf_email = os.environ.get("CF_EMAIL")
+    region_code = os.environ.get("REGION_CODE", "SJC").upper()
+    
+    target_domain = f"{region_code.lower()}.{base_domain}"
+    print(f"Target Domain dynamically set to: {target_domain} (Region: {region_code})")
+    
     check_api_url = "https://proxyip.xxxxxxx.nyc.mn/check"
     sync_count = int(os.environ.get("SYNC_COUNT", 10))
     scan_count = int(os.environ.get("SCAN_COUNT", 2000))
@@ -147,7 +152,7 @@ def main():
         except Exception as e:
             pass
     
-    if not all([api_token, zone_id, target_domain, cf_email]):
+    if not all([api_token, zone_id, base_domain, cf_email]):
         print("Error: Missing required environment variables (CF_API_TOKEN, CF_ZONE_ID, CF_TARGET_DOMAIN, CF_EMAIL).")
         print("Please configure them in GitHub Secrets.")
         exit(1)
@@ -158,8 +163,8 @@ def main():
     print(f"Testing IPs concurrently via {check_api_url}...")
     
     # === 地区调度配置区 ===
-    # 限制只保留这些目标地区的 IP
-    target_regions = ["SJC"]
+    # 动态限制只保留外界传入的目标地区的 IP
+    target_regions = [region_code]
     # ============================================
     
     valid_ips = []
