@@ -16,8 +16,13 @@ CF_CIDRS = [
 ]
     # ==========================================
 
-def generate_random_ip():
-    cidr = random.choice(CF_CIDRS)
+def generate_random_ip(hot_cidrs=None):
+    # 如果有热点网段，并且掷骰子命中 50% 概率，就从热点网段里抽；否则从大网段抽
+    if hot_cidrs and random.random() < 0.5:
+        cidr = random.choice(hot_cidrs)
+    else:
+        cidr = random.choice(CF_CIDRS)
+        
     base_ip, prefix = cidr.split('/')
     prefix = int(prefix)
     
@@ -125,18 +130,36 @@ def main():
     sync_count = int(os.environ.get("SYNC_COUNT", 10))
     scan_count = int(os.environ.get("SCAN_COUNT", 2000))
     
+    # === 从 ips-v4.txt 中提取历史优秀 IP 段 (/24) ===
+    hot_cidrs = []
+    if os.path.exists("ips-v4.txt"):
+        try:
+            with open("ips-v4.txt", "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        ip_str = line.split("#")[0]
+                        parts = ip_str.split(".")
+                        if len(parts) == 4:
+                            hot_cidrs.append(f"{parts[0]}.{parts[1]}.{parts[2]}.0/24")
+            hot_cidrs = list(set(hot_cidrs))
+            print(f"Loaded {len(hot_cidrs)} hot /24 subnets from ips-v4.txt for targeted scanning.")
+        except Exception as e:
+            pass
+    
     if not all([api_token, zone_id, target_domain, cf_email]):
         print("Error: Missing required environment variables (CF_API_TOKEN, CF_ZONE_ID, CF_TARGET_DOMAIN, CF_EMAIL).")
         print("Please configure them in GitHub Secrets.")
         exit(1)
         
     print(f"Generating {scan_count} random Cloudflare IPs...")
-    ips_to_test = [generate_random_ip() for _ in range(scan_count)]
+    ips_to_test = [generate_random_ip(hot_cidrs) for _ in range(scan_count)]
     
     print(f"Testing IPs concurrently via {check_api_url}...")
     
-    # === 盲扫配置区 ===
-    # 不限制地区，只要速度够快就行。
+    # === 地区调度配置区 ===
+    # 限制只保留这些目标地区的 IP
+    target_regions = ["FRA", "HKG", "LAX", "SJC"]
     # ============================================
     
     valid_ips = []
@@ -152,7 +175,7 @@ def main():
             
         attempt += 1
         print(f"--- Scan Iteration {attempt} ---")
-        ips_to_test = [generate_random_ip() for _ in range(scan_count)]
+        ips_to_test = [generate_random_ip(hot_cidrs) for _ in range(scan_count)]
         
         # === 并发线程配置区 ===
         # 控制同时发起多少个测速请求，默认 50，太高容易导致测速接口崩溃
@@ -161,9 +184,10 @@ def main():
             for future in concurrent.futures.as_completed(futures):
                 result = future.result()
                 if result:
-                    valid_ips.append(result)
-                    colo = result['colo']
-                    print(f"[FOUND {colo}] {result['ip']} (Total: {len(valid_ips)}/{sync_count})")
+                    colo = result.get('colo', 'UNK')
+                    if colo in target_regions:
+                        valid_ips.append(result)
+                        print(f"[FOUND {colo}] {result['ip']} (Total: {len(valid_ips)}/{sync_count})")
                         
                 # Early exit check
                 if len(valid_ips) >= sync_count:
