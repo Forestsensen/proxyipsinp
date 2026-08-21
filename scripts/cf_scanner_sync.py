@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 # 支持多个地区，用逗号隔开，例如 "SJC,LAX,HKG,FRA"
 # 💡 新手不知道有什么地区？可以直接填 "ALL"，系统会全区盲扫并自动创建所有能扫到的地区子域名！
 # ==========================================
-DEFAULT_REGIONS = "SJC,LAX,FRA,NRT,SIN"
+DEFAULT_REGIONS = "SJC,LAX,FRA,NRT"
 # ==========================================
 
     # === Cloudflare IPv4 Ranges (IP段配置区) ===
