@@ -16,22 +16,21 @@ DEFAULT_REGIONS = "SJC,LAX,FRA,NRT"
 # ==========================================
 
     # === Cloudflare IPv4 Ranges (IP段配置区) ===
-    # 现在从根目录的 ip.txt 文件读取，如果没有该文件则使用默认兜底网段
+    # 现在完全从根目录的 ip.txt 文件读取
 def load_cf_cidrs(file_path="ip.txt"):
-    default_cidrs = [
-        "104.16.0.0/13", "104.22.0.0/16", "104.23.0.0/16", "162.152.0.0/13",
-        "162.158.0.0/16", "162.159.0.0/16", "172.64.0.0/13", "172.68.0.0/16",
-        "172.69.0.0/16", "172.70.0.0/16", "172.71.0.0/16"
-    ]
     if not os.path.exists(file_path):
-        return default_cidrs
+        print(f"Error: 找不到 {file_path} 文件！请确保该文件存在并填写了需要扫描的 IP 段。")
+        exit(1)
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             cidrs = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
-        return cidrs if cidrs else default_cidrs
+        if not cidrs:
+            print(f"Error: {file_path} 文件为空！请在里面填入需要扫描的网段 (CIDR)。")
+            exit(1)
+        return cidrs
     except Exception as e:
-        print(f"Warning: Failed to read {file_path}, using default CIDRs. Error: {e}")
-        return default_cidrs
+        print(f"Error: 读取 {file_path} 失败！错误信息: {e}")
+        exit(1)
 
 CF_CIDRS = load_cf_cidrs()
     # ==========================================
