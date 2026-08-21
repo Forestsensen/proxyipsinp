@@ -37,29 +37,42 @@ CF_CIDRS = load_cf_cidrs()
 
 def generate_random_ip(hot_cidrs=None):
     # 如果有热点网段，并且掷骰子命中 50% 概率，就从热点网段里抽；否则从大网段抽
-    if hot_cidrs and random.random() < 0.5:
-        cidr = random.choice(hot_cidrs)
-    else:
-        cidr = random.choice(CF_CIDRS)
-        
-    base_ip, prefix = cidr.split('/')
-    prefix = int(prefix)
-    
-    parts = list(map(int, base_ip.split('.')))
-    ip_long = (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]
-    
-    host_bits = 32 - prefix
-    mask = (1 << host_bits) - 1
-    random_host = random.randint(0, mask)
-    
-    final_ip_long = (ip_long & ~mask) | random_host
-    
-    p1 = (final_ip_long >> 24) & 255
-    p2 = (final_ip_long >> 16) & 255
-    p3 = (final_ip_long >> 8) & 255
-    p4 = final_ip_long & 255
-    
-    return f"{p1}.{p2}.{p3}.{p4}"
+    for _ in range(10): # 避免死循环，最多重试 10 次
+        try:
+            if hot_cidrs and random.random() < 0.5:
+                cidr = random.choice(hot_cidrs)
+            else:
+                cidr = random.choice(CF_CIDRS)
+                
+            if '/' in cidr:
+                base_ip, prefix = cidr.split('/')
+                prefix = int(prefix)
+            else:
+                base_ip = cidr
+                prefix = 32
+            
+            parts = list(map(int, base_ip.split('.')))
+            if len(parts) != 4:
+                continue
+                
+            ip_long = (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]
+            
+            host_bits = 32 - prefix
+            mask = (1 << host_bits) - 1
+            random_host = random.randint(0, mask)
+            
+            final_ip_long = (ip_long & ~mask) | random_host
+            
+            p1 = (final_ip_long >> 24) & 255
+            p2 = (final_ip_long >> 16) & 255
+            p3 = (final_ip_long >> 8) & 255
+            p4 = final_ip_long & 255
+            
+            return f"{p1}.{p2}.{p3}.{p4}"
+        except Exception:
+            continue
+            
+    return "1.1.1.1" # 兜底返回，防止崩溃
 
 def test_ip(ip, check_api_url, timeout=5.0):
     start_time = time.time()
