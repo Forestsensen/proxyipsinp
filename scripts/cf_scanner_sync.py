@@ -284,6 +284,11 @@ def main():
         else:
             print(f"\nSkipping Cloudflare DNS Sync for {region} (Missing Credentials).")
                 
+    if can_sync and all_best_ips:
+        all_best_ips.sort(key=lambda x: x["latency"])
+        print(f"\n[Global Sync] Starting Cloudflare DNS Sync for MAIN DOMAIN: {base_domain}")
+        sync_to_cloudflare(api_token, zone_id, base_domain, all_best_ips, cf_email)
+
     if total_found == 0:
         print("No valid IPs found in this scan across any regions. Aborting.")
         exit(1)
