@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 # 支持多个地区，用逗号隔开，例如 "SJC,LAX,HKG,FRA"
 # 💡 新手不知道有什么地区？可以直接填 "ALL"，系统会全区盲扫并自动创建所有能扫到的地区子域名！
 # ==========================================
-DEFAULT_REGIONS = "SJC,LAX,FRA,NRT"
+DEFAULT_REGIONS = "HKG,NRT,SJC,LAX"
 # ==========================================
 
     # === Cloudflare IPv4 Ranges (IP段配置区) ===
@@ -96,8 +96,7 @@ def test_ip(ip, check_api_url, timeout=5.0):
 
 def sync_to_cloudflare(api_token, zone_id, target_domain, best_ips, cf_email):
     headers = {
-        "X-Auth-Email": cf_email,
-        "X-Auth-Key": api_token,
+        "Authorization": f"Bearer {api_token}",
         "Content-Type": "application/json"
     }
     url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?type=A&name={target_domain}"
